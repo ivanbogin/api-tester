@@ -2,31 +2,52 @@ package main
 
 import (
 	"fmt"
+	"github.com/zach-klippenstein/goregen"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"time"
 )
 
-func HttpHandler(w http.ResponseWriter, r *http.Request) {
-	status := http.StatusOK
-	uri := r.URL.Path
+var templates = template.Must(template.ParseFiles("templates/home.html", "templates/view.html"))
 
-	switch uri {
-	case "/500":
-		status = http.StatusInternalServerError
-	case "/wait3":
-		time.Sleep(3 * time.Second)
-	case "/wait5":
-		time.Sleep(5 * time.Second)
-	case "/wait60":
-		time.Sleep(time.Minute)
+func HomeHandler(w http.ResponseWriter, r *http.Request) {
+	inbox, _ := regen.Generate("[a-z0-9]{8}")
+	data := struct{ Inbox string }{inbox}
+	err := templates.ExecuteTemplate(w, "home.html", data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
 
+func ViewHandler(w http.ResponseWriter, r *http.Request) {
+	inbox := r.URL.Path[len("/view/"):]
+	data := struct {
+		Inbox string
+		Url   string
+	}{
+		inbox,
+		getInboxUrl(r.URL.Scheme, r.Host, inbox),
+	}
+	err := templates.ExecuteTemplate(w, "view.html", data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func InboxHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	fmt.Fprintf(w, "{\"time\": \"%d\"}", time.Now().UnixNano())
+	w.Header().Set("Content-type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%d", time.Now().UnixNano())
+}
+
+func getInboxUrl(scheme string, host string, inbox string) string {
+	if len(scheme) == 0 {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s/in/%s", scheme, host, inbox)
 }
 
 func main() {
@@ -36,6 +57,8 @@ func main() {
 		log.Fatal("$PORT must be set")
 	}
 
-	http.HandleFunc("/", HttpHandler)
+	http.HandleFunc("/", HomeHandler)
+	http.HandleFunc("/view/", ViewHandler)
+	http.HandleFunc("/in/", InboxHandler)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
