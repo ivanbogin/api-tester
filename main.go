@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/zach-klippenstein/goregen"
@@ -13,12 +14,8 @@ import (
 )
 
 var (
-	templates = template.Must(template.ParseFiles("templates/home.html", "templates/view.html"))
-	rclient   = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+	templates *template.Template
+	rclient   *redis.Client
 )
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +29,18 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 func viewHandler(w http.ResponseWriter, r *http.Request) {
 	inbox := r.URL.Path[len("/view/"):]
+	if len(inbox) != 8 {
+		return
+	}
+
+	key := "inbox:" + inbox
+
+	exists, _ := rclient.Exists(key).Result()
+	if exists == false {
+		w.Write([]byte("Inbox expired"))
+		return
+	}
+
 	data := struct {
 		Inbox string
 		URL   string
@@ -46,6 +55,16 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func inboxHandler(w http.ResponseWriter, r *http.Request) {
+	inbox := r.URL.Path[len("/in/"):]
+	if len(inbox) != 8 {
+		return
+	}
+
+	key := "inbox:" + inbox
+
+	rclient.HIncrBy(key, "requests", 1)
+	rclient.Expire(key, 1*time.Hour)
+
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -64,6 +83,20 @@ func main() {
 
 	if port == "" {
 		log.Fatal("$PORT must be set")
+	}
+
+	templates = template.Must(template.ParseFiles("templates/home.html", "templates/view.html"))
+
+	redisDb, _ := strconv.ParseInt(os.Getenv("REDIS_DB"), 10, 64)
+	rclient = redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDIS_ADDR"),
+		Password: os.Getenv("REDIS_PASS"),
+		DB:       redisDb,
+	})
+
+	_, err := rclient.Ping().Result()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	http.HandleFunc("/", homeHandler)
