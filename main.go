@@ -24,6 +24,11 @@ var (
 	rclient   *redis.Client
 )
 
+type Record struct {
+	Number  int
+	Content string
+}
+
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	inbox, _ := regen.Generate("[a-z0-9]{8}")
 	data := struct{ Inbox string }{inbox}
@@ -43,18 +48,34 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 	exists, _ := rclient.Exists(inboxKey).Result()
 	if exists == false {
-		w.Write([]byte("Inbox expired"))
+		w.Write([]byte("Inbox is empty or expired"))
 		return
 	}
 
+	requests, err := rclient.LRange(inboxKey + ":requests", 0, -1).Result()
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	var records []Record
+	for i := len(requests) - 1; i >= 0; i-- {
+		records = append(records, Record{Number: i + 1, Content: requests[i]})
+	}
+
 	data := struct {
-		Inbox string
-		URL   string
+		Inbox     string
+		URL       string
+		InboxSize int64
+		Records   []Record
 	}{
 		inbox,
 		getInboxURL(r.URL.Scheme, r.Host, inbox),
+		rclient.LLen(inboxKey + ":requests").Val(),
+		records,
 	}
-	err := templates.ExecuteTemplate(w, "view.html", data)
+
+	err = templates.ExecuteTemplate(w, "view.html", data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -75,7 +96,9 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rclient.RPush(inboxKey, record)
+	record = fmt.Sprintf("%s %s", time.Now(), record)
+
+	rclient.RPush(inboxKey + ":requests", record)
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
