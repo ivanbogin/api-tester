@@ -5,12 +5,18 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/zach-klippenstein/goregen"
 	"gopkg.in/redis.v3"
+	"io/ioutil"
+)
+
+const (
+	keylen int = 8
 )
 
 var (
@@ -29,13 +35,13 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 func viewHandler(w http.ResponseWriter, r *http.Request) {
 	inbox := r.URL.Path[len("/view/"):]
-	if len(inbox) != 8 {
+	if len(inbox) != keylen {
 		return
 	}
 
-	key := "inbox:" + inbox
+	inboxKey := "inbox:" + inbox
 
-	exists, _ := rclient.Exists(key).Result()
+	exists, _ := rclient.Exists(inboxKey).Result()
 	if exists == false {
 		w.Write([]byte("Inbox expired"))
 		return
@@ -56,14 +62,20 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 func inboxHandler(w http.ResponseWriter, r *http.Request) {
 	inbox := r.URL.Path[len("/in/"):]
-	if len(inbox) != 8 {
+	if len(inbox) != keylen {
 		return
 	}
 
-	key := "inbox:" + inbox
+	inboxKey := "inbox:" + inbox
 
-	rclient.HIncrBy(key, "requests", 1)
-	rclient.Expire(key, 1*time.Hour)
+	rclient.Expire(inboxKey, 1 * time.Hour)
+
+	record, err := dumpRequest(r)
+	if err != nil {
+		return
+	}
+
+	rclient.RPush(inboxKey, record)
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
@@ -76,6 +88,19 @@ func getInboxURL(scheme string, host string, inbox string) string {
 		scheme = "http"
 	}
 	return fmt.Sprintf("%s://%s/in/%s", scheme, host, inbox)
+}
+
+func dumpBody(r *http.Request) (string, error) {
+	bodyBytes, err := ioutil.ReadAll(r.Body)
+	return string(bodyBytes), err
+}
+
+func dumpRequest(r *http.Request) (string, error) {
+	dump, err := httputil.DumpRequest(r, true)
+	if err != nil {
+		return "", err
+	}
+	return string(dump), nil
 }
 
 func main() {
@@ -102,5 +127,5 @@ func main() {
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/view/", viewHandler)
 	http.HandleFunc("/in/", inboxHandler)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":" + port, nil))
 }
