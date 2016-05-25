@@ -17,6 +17,7 @@ import (
 
 const (
 	keylen int = 8
+	inboxExpireTime = 1 * time.Hour
 )
 
 var (
@@ -92,11 +93,13 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record = fmt.Sprintf("%s %s", time.Now(), record)
-
 	inboxRequestsKey := "requests:" + inbox
+
+	rclient.SetNX(inboxRequestsKey + ":created_at", time.Now(), inboxExpireTime)
+	rclient.Set(inboxRequestsKey + ":updated_at", time.Now(), inboxExpireTime)
+
 	rclient.RPush(inboxRequestsKey, record)
-	rclient.Expire(inboxRequestsKey, 1 * time.Hour)
+	rclient.Expire(inboxRequestsKey, inboxExpireTime)
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
