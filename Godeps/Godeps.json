@@ -2,6 +2,9 @@
 	"ImportPath": "api-tester",
 	"GoVersion": "go1.6",
 	"GodepVersion": "v62",
+	"Packages": [
+		"./..."
+	],
 	"Deps": [
 		{
 			"ImportPath": "github.com/zach-klippenstein/goregen",
