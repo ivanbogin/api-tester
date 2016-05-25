@@ -44,15 +44,15 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inboxKey := "inbox:" + inbox
+	inboxRequestsKey := "requests:" + inbox
 
-	exists, _ := rclient.Exists(inboxKey).Result()
+	exists, _ := rclient.Exists(inboxRequestsKey).Result()
 	if exists == false {
 		w.Write([]byte("Inbox is empty or expired"))
 		return
 	}
 
-	requests, err := rclient.LRange(inboxKey + ":requests", 0, -1).Result()
+	requests, err := rclient.LRange(inboxRequestsKey, 0, -1).Result()
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -71,7 +71,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	}{
 		inbox,
 		getInboxURL(r.URL.Scheme, r.Host, inbox),
-		rclient.LLen(inboxKey + ":requests").Val(),
+		rclient.LLen(inboxRequestsKey).Val(),
 		records,
 	}
 
@@ -87,10 +87,6 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inboxKey := "inbox:" + inbox
-
-	rclient.Expire(inboxKey, 1 * time.Hour)
-
 	record, err := dumpRequest(r)
 	if err != nil {
 		return
@@ -98,7 +94,9 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 
 	record = fmt.Sprintf("%s %s", time.Now(), record)
 
-	rclient.RPush(inboxKey + ":requests", record)
+	inboxRequestsKey := "requests:" + inbox
+	rclient.RPush(inboxRequestsKey, record)
+	rclient.Expire(inboxRequestsKey, 1 * time.Hour)
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
