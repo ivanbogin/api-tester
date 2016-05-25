@@ -13,12 +13,16 @@
 
 <h2>Inbox {{.Inbox}}</h2>
 
-<p>Requests captured: <strong>{{.InboxSize}}</strong>. Link for requests: <a href="{{.URL}}">{{.URL}}</a></p>
+<div>
+  Time between first and last requests: <strong>{{.TimeDiff}} sec</strong><br/>
+  Requests captured: <strong>{{.InboxSize}}</strong><br/>
+  Link for requests: <a href="{{.URL}}">{{.URL}}</a>
+</div>
 
 <div class="records">
-{{range .Records}}
+  {{range .Records}}
   <p><strong>{{.Number}}</strong> {{.Content}}</p>
-{{end}}
+  {{end}}
 </div>
 
 </body>

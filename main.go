@@ -30,6 +30,14 @@ type Record struct {
 	Content string
 }
 
+type RecordsPage struct {
+	Inbox     string
+	TimeDiff  int64
+	URL       string
+	InboxSize int64
+	Records   []Record
+}
+
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	inbox, _ := regen.Generate("[a-z0-9]{8}")
 	data := struct{ Inbox string }{inbox}
@@ -64,13 +72,13 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		records = append(records, Record{Number: i + 1, Content: requests[i]})
 	}
 
-	data := struct {
-		Inbox     string
-		URL       string
-		InboxSize int64
-		Records   []Record
-	}{
+	createdAt, _ := rclient.Get(inboxRequestsKey + ":created_at").Int64()
+	updatedAt, _ := rclient.Get(inboxRequestsKey + ":updated_at").Int64()
+	timeDiff  := updatedAt - createdAt
+
+	data := RecordsPage{
 		inbox,
+		timeDiff,
 		getInboxURL(r.URL.Scheme, r.Host, inbox),
 		rclient.LLen(inboxRequestsKey).Val(),
 		records,
@@ -95,8 +103,8 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 
 	inboxRequestsKey := "requests:" + inbox
 
-	rclient.SetNX(inboxRequestsKey + ":created_at", time.Now(), inboxExpireTime)
-	rclient.Set(inboxRequestsKey + ":updated_at", time.Now(), inboxExpireTime)
+	rclient.SetNX(inboxRequestsKey + ":created_at", time.Now().Unix(), inboxExpireTime)
+	rclient.Set(inboxRequestsKey + ":updated_at", time.Now().Unix(), inboxExpireTime)
 
 	rclient.RPush(inboxRequestsKey, record)
 	rclient.Expire(inboxRequestsKey, inboxExpireTime)
